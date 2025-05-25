@@ -1,4 +1,4 @@
-# trabajo# Programación Lineal Dinámica
+# Programación Lineal Dinámica
 
 ![Programación Lineal](https://img.shields.io/badge/Tool-Programaci%C3%B3n%20Lineal-blue)
 
