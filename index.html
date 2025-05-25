@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Programación Lineal Dinámica</title>
+    <!-- Plotly.js CDN -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            margin: 2rem;
+            background: #f7f7f7;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+            padding: 1rem;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+
+        .row input,
+        .row select {
+            width: 4rem;
+            margin: 0 0.3rem;
+            padding: 0.3rem;
+            text-align: center;
+        }
+
+        .row .btn {
+            margin-left: 0.5rem;
+            padding: 0.3rem 0.6rem;
+            cursor: pointer;
+            border: 1px solid #888;
+            background: #eee;
+            border-radius: 4px;
+        }
+
+        .row .btn.remove {
+            background: #d9534f;
+            border-color: #d43f3a;
+            color: #fff;
+        }
+
+        #btnAdd {
+            background: #5cb85c;
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #btnSolve {
+            background: #0275d8;
+            color: #fff;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        #plot {
+            width: 100%;
+            height: 400px;
+            margin-top: 1rem;
+        }
+
+        #output {
+            margin-top: 1rem;
+            white-space: pre;
+            background: #eee;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: Consolas;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h2>Función objetivo</h2>
+        <p style="font-style:italic; color:#555;">
+            Definir la función objetivo: elige los coeficientes y si deseas <strong>Maximizar</strong> o
+            <strong>Minimizar</strong> U = c₁·x₀ + c₂·x₁
+        </p>
+        <div class="row">
+            <label>Coef</label>
+            <input type="number" id="obj_c1" value="3" />
+            <span>x₀ +</span>
+            <label>Coef</label>
+            <input type="number" id="obj_c2" value="1" />
+            <span>x₁</span>
+            <label style="margin-left:1rem;">Objetivo</label>
+            <select id="obj_type">
+                <option value="max" selected>Maximizar</option>
+                <option value="min">Minimizar</option>
+            </select>
+        </div>
+    </div>
+
+
+    <div class="card" id="constraints-card">
+        <h2>Restricciones</h2>
+        <p style="font-style:italic; color:#555;">
+            Agrega todas las restricciones de tu problema en la forma:
+            c₁·x₀ + c₂·x₁ (relación ≤, = o ≥)
+        </p>
+        <div id="constraints-container"></div>
+        <button id="btnAdd">+ Agregar restricción</button>
+    </div>
+
+
+    <button id="btnSolve">Resolver</button>
+<button id="btnExport" style="margin-left:1rem; background:#28a745; color:white; padding:0.6rem 1.2rem; border:none; border-radius:4px; cursor:pointer;">
+  Exportar a PDF
+</button>
+
+    <div id="plot"></div>
+    <div id="output"></div>
+
+    <template id="tplConstraint">
+        <div class="row constraint-row">
+            <label>Coef</label>
+            <input type="number" class="c1" value="2" />
+            <span>x₀ +</span>
+            <label>Coef</label>
+            <input type="number" class="c2" value="1" />
+            <span>x₁</span>
+            <select class="rel">
+                <option value="<=">&le;</option>
+                <option value="=">=</option>
+                <option value=">=">&ge;</option>
+            </select>
+            <input type="number" class="b" value="8" />
+            <button class="btn remove">–</button>
+        </div>
+    </template>
+
+    <script>
+        const container = document.getElementById('constraints-container');
+        const tpl = document.getElementById('tplConstraint').content;
+
+        function addConstraint(c1 = 2, c2 = 1, rel = '<=', b = 0) {
+            const clone = document.importNode(tpl, true);
+            const row = clone.querySelector('.constraint-row');
+            row.querySelector('.c1').value = c1;
+            row.querySelector('.c2').value = c2;
+            row.querySelector('.rel').value = rel;
+            row.querySelector('.b').value = b;
+            row.querySelector('.remove').addEventListener('click', () => row.remove());
+            container.appendChild(row);
+        }
+
+        // inicializa con 2 restricciones de ejemplo
+        addConstraint(2, 1, '<=', 8);
+        addConstraint(2, 3, '<=', 12);
+
+        document.getElementById('btnAdd').onclick = () => addConstraint(1, 1, '<=', 0);
+
+        document.getElementById('btnSolve').onclick = () => {
+            // 1) Leer entradas
+            const c1 = +document.getElementById('obj_c1').value;
+            const c2 = +document.getElementById('obj_c2').value;
+            const maximize = document.getElementById('obj_type').value === 'max';
+
+            const rows = Array.from(container.querySelectorAll('.constraint-row'));
+            const A = rows.map(r => [+r.querySelector('.c1').value, +r.querySelector('.c2').value]);
+            const dir = rows.map(r => r.querySelector('.rel').value);
+            const b = rows.map(r => +r.querySelector('.b').value);
+
+// 2) Dominio de x1 con interceptos en el eje
+const step = 0.05;
+const x1 = [];
+
+// Calculamos todas las intersecciones b[i] / A[i][0] (solo si A[i][0] != 0)
+const axisIntercepts = A.map((row,i) => {
+  return row[0] !== 0
+    ? b[i] / row[0]
+    : -Infinity;         // descartamos coeficientes nulos
+});
+
+// Filtramos solo interceptos positivos y tomamos el mayor
+const positive = axisIntercepts.filter(v => v > 0);
+const maxX1 = positive.length > 0
+  ? Math.max(...positive)
+  : 10;                 // por si no hay ninguno, ponemos un tope razonable
+
+// Ahora creamos el dominio
+for (let v = 0; v <= maxX1; v += step) {
+  x1.push(v);
+}
+
+
+            // 3) Restricciones
+            const restrictions = A.map((row, i) => {
+                return x1.map(x => row[1] === 0
+                    ? (dir[i] === '>=' ? -Infinity : Infinity)
+                    : (b[i] - row[0] * x) / row[1]
+                );
+            });
+
+            // 4) Rango factible
+            const x2_low = x1.map(() => -Infinity);
+            const x2_high = x1.map(() => Infinity);
+            restrictions.forEach((vals, i) => {
+                if (dir[i] === '<=')
+                    vals.forEach((y, j) => x2_high[j] = Math.min(x2_high[j], y));
+                else if (dir[i] === '>=')
+                    vals.forEach((y, j) => x2_low[j] = Math.max(x2_low[j], y));
+                else
+                    vals.forEach((y, j) => {
+                        x2_low[j] = Math.max(x2_low[j], y);
+                        x2_high[j] = Math.min(x2_high[j], y);
+                    });
+            });
+
+            // 5) Vértices (intersecciones entre pares + ejes)
+            const verts = [];
+            function feasible(pt) {
+                return A.every((row, i) => {
+                    const lhs = row[0] * pt[0] + row[1] * pt[1];
+                    return dir[i] === '<=' ? lhs <= b[i] + 1e-8
+                        : dir[i] === '>=' ? lhs >= b[i] - 1e-8
+                            : Math.abs(lhs - b[i]) < 1e-8;
+                });
+            }
+            // a) pares de líneas
+            for (let i = 0; i < A.length; i++) for (let j = i + 1; j < A.length; j++) {
+                const det = A[i][0] * A[j][1] - A[i][1] * A[j][0];
+                if (Math.abs(det) > 1e-8) {
+                    const x = (b[i] * A[j][1] - b[j] * A[i][1]) / det;
+                    const y = (A[i][0] * b[j] - A[j][0] * b[i]) / det;
+                    if (x >= 0 && y >= 0 && feasible([x, y])) verts.push([x, y]);
+                }
+            }
+            // b) con ejes
+            A.forEach((row, i) => {
+                if (row[1] !== 0) {
+                    const y = b[i] / row[1], x = 0;
+                    if (y >= 0 && feasible([x, y])) verts.push([x, y]);
+                }
+                if (row[0] !== 0) {
+                    const x = b[i] / row[0], y = 0;
+                    if (x >= 0 && feasible([x, y])) verts.push([x, y]);
+                }
+            });
+            // filtrar únicos
+            const seen = {};
+            const feasibleVerts = verts.filter(([x, y]) => {
+                const k = `${x.toFixed(4)},${y.toFixed(4)}`;
+                if (seen[k]) return false;
+                seen[k] = true; return true;
+            });
+
+            // 6) Evaluar objetivo
+            feasibleVerts.forEach(pt => pt.push(c1 * pt[0] + c2 * pt[1]));
+            const optimal = maximize
+                ? feasibleVerts.reduce((a, b) => b[2] > a[2] ? b : a)
+                : feasibleVerts.reduce((a, b) => b[2] < a[2] ? b : a);
+
+            // 7) Mostrar resultados en tabla
+            const outDiv = document.getElementById('output');
+            outDiv.innerHTML = '';          // limpia contenido previo
+
+            // 7.1) Tabla de vértices
+            const table = document.createElement('table');
+            table.style.borderCollapse = 'collapse';
+            table.style.width = '100%';
+            table.innerHTML = `
+  <thead>
+    <tr>
+      <th style="border:1px solid #ccc; padding:4px;">x₁</th>
+      <th style="border:1px solid #ccc; padding:4px;">x₂</th>
+      <th style="border:1px solid #ccc; padding:4px;">U</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${feasibleVerts.map(([x, y, u]) => `
+      <tr>
+        <td style="border:1px solid #ccc; padding:4px; text-align:right;">${x.toFixed(3)}</td>
+        <td style="border:1px solid #ccc; padding:4px; text-align:right;">${y.toFixed(3)}</td>
+        <td style="border:1px solid #ccc; padding:4px; text-align:right;">${u.toFixed(3)}</td>
+      </tr>
+    `).join('')}
+  </tbody>
+`;
+            outDiv.appendChild(table);
+
+            // 7.2) Solución óptima
+            const optP = document.createElement('p');
+            optP.style.marginTop = '1rem';
+            optP.innerHTML = `
+  <strong>${maximize ? 'Máximo' : 'Mínimo'} U = ${optimal[2].toFixed(3)}</strong><br/>
+  en x₁ = ${optimal[0].toFixed(3)}, x₂ = ${optimal[1].toFixed(3)}
+`;
+            outDiv.appendChild(optP);
+
+            // 8) Graficar con Plotly
+            const traces = [];
+            // región factible
+            traces.push({
+                x: [...x1, ...x1.slice().reverse()],
+                y: [...x2_high, ...x2_low.slice().reverse()],
+                fill: 'toself', fillcolor: 'rgba(173,216,230,0.4)',
+                line: { width: 0 }, name: 'Región factible'
+            });
+            // restricciones
+            restrictions.forEach((vals, i) => {
+                traces.push({
+                    x: x1, y: vals, mode: 'lines',
+                    line: { dash: dir[i] === '<=' ? 'dash' : 'dot' },
+                    name: `R${i}: ${A[i][0]}x₁+${A[i][1]}x₂ ${dir[i]} ${b[i]}`
+                });
+            });
+            // vértices
+            traces.push({
+                x: feasibleVerts.map(p => p[0]),
+                y: feasibleVerts.map(p => p[1]),
+                mode: 'markers',
+                marker: { size: 8, color: 'black' },
+                name: 'Vértices'
+            });
+            // óptimo
+            traces.push({
+                x: [optimal[0]], y: [optimal[1]],
+                mode: 'markers+text',
+                marker: { size: 12, color: 'red', symbol: 'diamond' },
+                text: ['Óptimo'], textposition: 'top center',
+                name: 'Óptimo'
+            });
+
+            Plotly.newPlot('plot', traces, {
+                title: `${maximize ? 'Maximizar' : 'Minimizar'} U=${c1}x₁+${c2}x₂`,
+                xaxis: { title: 'x₁' }, yaxis: { title: 'x₂' }, margin: { t: 40 }
+            });
+        };
+        document.getElementById('btnExport').onclick = async () => {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'pt',
+    format: 'a4'
+  });
+
+  // 1) Texto: Función objetivo y restricciones
+  const c1 = +document.getElementById('obj_c1').value;
+  const c2 = +document.getElementById('obj_c2').value;
+  const tipo = document.getElementById('obj_type').value === 'max' ? 'Maximizar' : 'Minimizar';
+  let y = 40;
+  pdf.setFontSize(14);
+  pdf.text('Programación Lineal - Resumen', 40, y);
+  y += 30;
+  pdf.setFontSize(12);
+  pdf.text(`Función objetivo (${tipo}): U = ${c1}·x₁ + ${c2}·x₂`, 40, y);
+  y += 20;
+  pdf.text('Restricciones:', 40, y);
+  y += 20;
+
+  const rows = Array.from(document.querySelectorAll('.constraint-row'));
+  rows.forEach((r, i) => {
+    const a1 = r.querySelector('.c1').value;
+    const a2 = r.querySelector('.c2').value;
+    const rel = r.querySelector('.rel').value;
+    const b  = r.querySelector('.b').value;
+    pdf.text(`R${i}: ${a1}·x₁ + ${a2}·x₂  ${rel}  ${b}`, 60, y);
+    y += 20;
+  });
+
+  // 2) Gráfico: captura canvas
+  y += 10;
+  pdf.text('Gráfico:', 40, y);
+  y += 10;
+  const plotEl = document.getElementById('plot');
+  const canvasPlot = await html2canvas(plotEl, { scale: 2 });
+  const imgDataPlot = canvasPlot.toDataURL('imagePNG');
+  pdf.addImage(imgDataPlot, 'PNG', 40, y, 500, 300);
+  y += 310;
+
+  // 3) Tabla de vértices
+  pdf.text('Tabla de vértices factibles:', 40, y);
+  y += 20;
+  // Para simplicidad, volvemos a leer ya impreso en #output
+  const lines = document.getElementById('output').innerText.split('\n');
+  lines.forEach(line => {
+    pdf.text(line, 40, y);
+    y += 16;
+    // Salto de página si es necesario
+    if (y > 750) { pdf.addPage(); y = 40; }
+  });
+
+  // 4) Guardar
+  pdf.save('PL_resultado.pdf');
+};
+
+    </script>
+    <!-- jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- html2canvas -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+</body>
+
+</html>
